@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
@@ -9,11 +10,11 @@ using Containers;
 public class GridController : MonoBehaviour
 {
     public int currentTime; //current observation step id
-    public int t_max = 10; //time after which I have 0 confidence on the previous observation
+    public int t_max = 9; //time after which I have 0 confidence on the previous observation
 
     public bool logMetrics = false;
     public bool plotMaps = false;
-
+    
     public Cell[,] observationGrid,
         timeConfidenceGrid,
         spatialConfidenceGrid,
@@ -23,9 +24,10 @@ public class GridController : MonoBehaviour
         spatialConfidenceGridNewObs,
         timeConfidenceGridNewObs,
         lastObsGrid,
-        observationGridNewObs;
+        observationGridNewObs,
+        priorityGrid, priorityGrid_prec;
 
-    Texture2D observationTexture,
+    public Texture2D observationTexture,
         timeConfidenceTexture,
         spatialConfidenceTexture,
         overralConfidenceTexture,
@@ -34,11 +36,8 @@ public class GridController : MonoBehaviour
         spatialConfidenceTextureNewObs,
         timeConfidenceTextureNewObs,
         lastObsTexture,
-        observationTextureNewObs;
-
-    public Cell[,] priorityGrid;
-
-    private Texture2D priorityTexture;
+        observationTextureNewObs,
+        priorityTexture, priorityTexture_prec;
 
     public float cellWidth = 1f, cellDepth = 1f;
 
@@ -49,7 +48,9 @@ public class GridController : MonoBehaviour
 
     // Variable for metrics
     public float spatialThreshold = 0.2f;
-    private float GCM, PCM;
+
+    public float GCM;
+    float PCM;
     private int numberOfCellsWidth, numberOfCellsDepth;
 
     public float peopleThreshold = 0.2f;
@@ -65,7 +66,8 @@ public class GridController : MonoBehaviour
 
 
     private void
-        InitializeGrid(ref Cell[,] grid, bool plot, Vector2 factor, ref Texture2D texture2D) //intialise grid values
+        InitializeGrid(ref Cell[,] grid, bool plot, Vector2 factor, ref Texture2D texture2D,
+            string name) //intialise grid values
     {
         MapController map = GameObject.Find("Map").GetComponent<MapController>();
 
@@ -79,6 +81,8 @@ public class GridController : MonoBehaviour
         texture2D = new Texture2D(numberOfCellsWidth, numberOfCellsDepth);
         texture2D.filterMode = FilterMode.Point;
         var myobj = GameObject.CreatePrimitive(PrimitiveType.Plane);
+        myobj.name = name;
+        myobj.transform.SetParent(transform);
         myobj.transform.position =
             new Vector3(map.mapBounds.center.x + (map.mapBounds.size.x + 1) * factor.x, 0.1f,
                 map.mapBounds.center.z + (map.mapBounds.size.z + 1) * factor.y);
@@ -207,19 +211,6 @@ public class GridController : MonoBehaviour
         //Debug.Log("new obs value = " + observationGridNewObs[i, j].value);
     }
 
-    private void UpdatePriorityGrid()
-    {
-        for (int i = 0; i < numberOfCellsWidth; i++)
-        {
-            for (int j = 0; j < numberOfCellsDepth; j++)
-            {
-                priorityGrid[i, j]
-                    .SetValue(alfa * observationGrid[i, j].value +
-                              (1 - alfa) * 0.5f); // (1 - alfa) * (1 - overralConfidenceGrid[i,j].value));
-            }
-        }
-    }
-
     private void GlobalCoverageMetric()
     {
         int conf = 0;
@@ -238,6 +229,27 @@ public class GridController : MonoBehaviour
                 (numberOfCellsWidth * numberOfCellsDepth)
             ); //(GCM + conf / numberOfCellsWidth * numberOfCellsDepth)/(currentTime + 1);
         if (logMetrics) Debug.Log("GCM = " + GCM / (currentTime + 1));
+    }
+    
+    public float GlobalCoverageMetric_Current()
+    {
+        float gcm_curr = 0f;
+        int conf = 0;
+        for (int i = 0; i < numberOfCellsWidth; i++)
+        {
+            for (int j = 0; j < numberOfCellsDepth; j++)
+            {
+                if (overralConfidenceGrid[i, j].value > spatialThreshold)
+                {
+                    conf += 1;
+                }
+            }
+        }
+
+        gcm_curr = (conf / (float)(numberOfCellsWidth *
+                            numberOfCellsDepth)
+        ); //(GCM + conf / numberOfCellsWidth * numberOfCellsDepth)/(currentTime + 1);
+        return gcm_curr;
     }
 
     private void PeopleCoverageMetric()
@@ -298,49 +310,76 @@ public class GridController : MonoBehaviour
         }
     }
 
-    //Unity methods
-    private void OnEnable()
+    public void Reset()
     {
-        ;
-    }
-
-    private void Start()
-    {
-        InitializeGrid(ref observationGrid, plotMaps, new Vector2(-1f, 0f), ref observationTexture);
-        InitializeGrid(ref observationGridNewObs, plotMaps, new Vector2(-1f, 1f), ref overralConfidenceTextureNewObs);
-        InitializeGrid(ref timeConfidenceGrid, plotMaps, new Vector2(0f, 0f), ref timeConfidenceTexture);
-        InitializeGrid(ref timeConfidenceGridNewObs, plotMaps, new Vector2(0f, 1f), ref timeConfidenceTextureNewObs);
-        InitializeGrid(ref spatialConfidenceGrid, plotMaps, new Vector2(1f, 0f), ref spatialConfidenceTexture);
-        InitializeGrid(ref spatialConfidenceGridNewObs, plotMaps, new Vector2(1f, 1f),
-            ref spatialConfidenceTextureNewObs);
-        InitializeGrid(ref overralConfidenceGrid, plotMaps, new Vector2(2f, 0f), ref overralConfidenceTexture);
-        InitializeGrid(ref overralConfidenceGridNewObs, plotMaps, new Vector2(2f, 1f),
-            ref overralConfidenceTextureNewObs);
-        InitializeGrid(ref overralConfidenceGridTime, plotMaps, new Vector2(2f, -1f), ref overralConfidenceTextureTime);
-        InitializeGrid(ref priorityGrid, plotMaps, new Vector2(-2f, 0f), ref priorityTexture);
-
-        InitializeGrid(ref lastObsGrid, false, new Vector2(0f, 0f), ref lastObsTexture);
-        //GenerateCameras()
-
-        mapVolume = GameObject.Find("Map").GetComponent<MapController>().mapBounds;
-        map = GameObject.Find("Floor").GetComponent<BoxCollider>().bounds;
-
+        for (int i = 0; i < numberOfCellsWidth; i++)
+        {
+            for (int j = 0; j < numberOfCellsDepth; j++)
+            {
+                observationGrid[i,j].SetValue(0);
+                timeConfidenceGrid[i,j].SetValue(0);
+                spatialConfidenceGrid[i,j].SetValue(0);
+                overralConfidenceGrid[i,j].SetValue(0);
+                overralConfidenceGridTime[i,j].SetValue(0);
+                overralConfidenceGridNewObs[i,j].SetValue(0);
+                spatialConfidenceGridNewObs[i,j].SetValue(0);
+                timeConfidenceGridNewObs[i,j].SetValue(0);
+                lastObsGrid[i,j].SetValue(-t_max);
+                observationGridNewObs[i,j].SetValue(0);
+            }
+        }
         currentTime = 0;
         GCM = 0;
         PCM = 0;
         peopleHistory = 0;
         peopleCovered = 0;
         peopleTimeCount = 0;
+        
     }
 
-    private void Update()
+    private void Awake()
     {
-        currentTime++;
-        //Debug.Log("current" + currentTime );
-        //reset all newObs grids before new time step
+        InitializeGrid(ref observationGrid, plotMaps, new Vector2(-1f, 0f),
+            ref observationTexture, "Observation");
+        InitializeGrid(ref observationGridNewObs, plotMaps, new Vector2(-1f, 1f),
+            ref observationTextureNewObs, "Observation New Observations");
+        InitializeGrid(ref timeConfidenceGrid, plotMaps, new Vector2(0f, 0f),
+            ref timeConfidenceTexture, "Time Confidence");
+        InitializeGrid(ref timeConfidenceGridNewObs, plotMaps, new Vector2(0f, 1f),
+            ref timeConfidenceTextureNewObs, "Time Confidence new Observations");
+        InitializeGrid(ref spatialConfidenceGrid, plotMaps, new Vector2(1f, 0f),
+            ref spatialConfidenceTexture, "Spatial Confidence");
+        InitializeGrid(ref spatialConfidenceGridNewObs, plotMaps, new Vector2(1f, 1f),
+            ref spatialConfidenceTextureNewObs, "Spatial Confidence New Observations");
+        InitializeGrid(ref overralConfidenceGrid, plotMaps, new Vector2(2f, 0f),
+            ref overralConfidenceTexture, "Overall Confidence");
+        InitializeGrid(ref overralConfidenceGridNewObs, plotMaps, new Vector2(2f, 1f),
+            ref overralConfidenceTextureNewObs, "Overall confidence New Observations");
+        InitializeGrid(ref overralConfidenceGridTime, plotMaps, new Vector2(2f, -1f),
+            ref overralConfidenceTextureTime, "Overall Confidence Grid Time");
+        InitializeGrid(ref priorityGrid, plotMaps, new Vector2(-2f, 0f),
+            ref priorityTexture, "Priority");
+        InitializeGrid(ref priorityGrid_prec, plotMaps, new Vector2(-3f, 0f),
+            ref priorityTexture_prec, "Priority -1");
+        InitializeGrid(ref lastObsGrid, false, new Vector2(0f, 0f),
+            ref lastObsTexture, "Last Observation");
+        //GenerateCameras()
+
+        mapVolume = GameObject.Find("Map").GetComponent<MapController>().mapBounds;
+        map = GameObject.Find("Floor").GetComponent<BoxCollider>().bounds;
+        
+        Reset();
     }
 
-    private void LateUpdate()
+//    private void Update()
+//    {
+//        currentTime += Time.deltaTime;
+//        //Debug.Log("current" + currentTime );
+//        //reset all newObs grids before new time step
+//    }
+
+    public int maskedx = -1, maskedy = -1;
+    public void UpdateGCMValues()
     {
         UpdateTimeConfidenceGrid();
         UpdateObservationGridNewObs();
@@ -351,6 +390,7 @@ public class GridController : MonoBehaviour
         {
             for (int j = 0; j < numberOfCellsDepth; j++)
             {
+                spatialConfidenceGrid[i, j].SetValue(1);
                 if (overralConfidenceGridTime[i, j].value != 0)
                 {
                     //Debug.Log("newobs = " + overralConfidenceGridNewObs[i, j].value);
@@ -366,7 +406,7 @@ public class GridController : MonoBehaviour
 
                     overralConfidenceGrid[i, j].SetValue(overralConfidenceGridNewObs[i, j].value);
                     observationGrid[i, j].SetValue(observationGridNewObs[i, j].value);
-                    spatialConfidenceGrid[i, j].SetValue(spatialConfidenceGridNewObs[i, j].value);
+                    //spatialConfidenceGrid[i, j].SetValue(spatialConfidenceGridNewObs[i, j].value);
 
                     //Debug.Log("newobs");
                 }
@@ -375,7 +415,8 @@ public class GridController : MonoBehaviour
                     overralConfidenceGrid[i, j].SetValue(overralConfidenceGridTime[i, j].value);
                     //Debug.Log("HEREEEEEE: Time");
                 }
-
+                
+                priorityGrid_prec[i, j].SetValue(priorityGrid[i,j].value);
                 priorityGrid[i, j].SetValue(alfa * observationGrid[i, j].value +
                                             (1 - alfa) * (1 - overralConfidenceGrid[i, j].value));
 
@@ -386,7 +427,8 @@ public class GridController : MonoBehaviour
                     observationGrid[i, j].UpdateColor();
                     timeConfidenceGrid[i, j].UpdateColor();
                     spatialConfidenceGrid[i, j].UpdateColor();
-                    overralConfidenceGrid[i, j].UpdateColor();
+                    if (!(i == maskedx && j == maskedy))
+                        overralConfidenceGrid[i, j].UpdateColor();
                     overralConfidenceGridTime[i, j].UpdateColor();
                     overralConfidenceGridNewObs[i, j].UpdateColor();
                     spatialConfidenceGridNewObs[i, j].UpdateColor();
@@ -398,6 +440,7 @@ public class GridController : MonoBehaviour
                 //lastObsGrid,
             }
         }
+
         if (plotMaps)
         {
             observationTexture.Apply();
@@ -412,6 +455,7 @@ public class GridController : MonoBehaviour
             priorityTexture.Apply();
             lastObsTexture.Apply();
         }
+
         GlobalCoverageMetric();
         PeopleCoverageMetric();
         people.Clear();

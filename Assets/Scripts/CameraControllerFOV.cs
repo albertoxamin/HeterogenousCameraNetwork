@@ -5,16 +5,19 @@ using UnityEditor;
 using Geometry;
 using Containers;
 using Unity.Collections;
+using Unity.Jobs;
 
 public class CameraControllerFOV : MonoBehaviour
 {
-    private readonly float cameraWidth = 640f,
+    [SerializeField]
+    private float cameraWidth = 640f,
         cameraHeight = 480f,
         downscalingFactor = 20f,
         FOV = 100f,
         distanceDeviation = 2f;
 
     public float maxDistance = 100f;
+    public float frameRate = 15;
     public bool showDebugRays;
 
     private float vFOV;
@@ -375,13 +378,28 @@ public class CameraControllerFOV : MonoBehaviour
         transform.Rotate(20, 0, 0);
     }
 
+    private float timeSinceLastFrame = 0;
+    
+    [SerializeField]private bool overrideForTraining;
     private void Update()
     {
+        if (overrideForTraining)
+            return;
+        if (timeSinceLastFrame >= (1f / frameRate))
+        {
+            Project();
+        }
+
+        timeSinceLastFrame += Time.deltaTime;
+    }
+
+    public void Project()
+    {
+        timeSinceLastFrame = 0;
         personHit.Clear();
         boundingBoxes.Clear();
         personHitSizeChecked.Clear();
         FixCameraRes();
         FillVisibilityGrid();
-        //ProjectRaysFromCamera();
     }
 }
